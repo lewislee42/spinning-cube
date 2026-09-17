@@ -85,7 +85,7 @@ private:
 		float normX = calculateX(normalX, normalY, normalZ);
         float normY = calculateY(normalX, normalY, normalZ);
         float normZ = calculateZ(normalX, normalY, normalZ);
-		return (normalX * lightX) + (normalY * lightY) + (normalZ * lightZ);
+		return (normX * lightX) + (normY * lightY) + (normZ * lightZ);
 	}
 
 public:
