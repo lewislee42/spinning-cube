@@ -1,6 +1,3 @@
-#![allow(warnings)]
-
-
 use color_eyre::Result;
 use std::thread;
 use std::time::Duration;
@@ -136,15 +133,6 @@ impl SpinningCube {
             }
         }
         Ok(())
-    }
-
-    fn print_debug(&self) {
-        for i in 0..SCREEN_HEIGHT {
-            for j in 0..SCREEN_WIDTH {
-                print!("{}", i % 10);
-            }
-            print!("\r\n");
-        }
     }
 
     fn should_close(&self) -> Result<bool> {
