@@ -1,6 +1,20 @@
+#![allow(warnings)]
+
 use color_eyre::Result;
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    layout::{Alignment, Constraint, Layout, Rect},
+    style::Style,
+    widgets::{Block, Borders, Paragraph},
+    DefaultTerminal, Frame,
+};
+use std::io::stdout;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const SCREEN_WIDTH: i32 = 338;
 const SCREEN_HEIGHT: i32 = 91;
@@ -9,54 +23,61 @@ struct SpinningCube {
     rotate_x: f32,
     rotate_y: f32,
     rotate_z: f32,
-    
+
     cube_width: f32,
 
-    distance_from_cam:  f32,
-    k_1:                f32,
-    increment_speed:    f32,
-    rotation_speed:     f32,
+    distance_from_cam: f32,
+    k_1: f32,
+    increment_speed: f32,
+    rotation_speed: f32,
 
-    buffer:     Vec<char>,
-    z_buffer:   Vec<f32>
+    buffer: Vec<char>,
+    z_buffer: Vec<f32>,
+
+    delta_time: Duration,
+    fps: u32,
+    last_frame: Instant,
 }
 
 impl SpinningCube {
     fn default() -> Self {
-        Self  {
-            rotate_x:           0.0,
-            rotate_y:           0.0,
-            rotate_z:           0.0,
-            cube_width:         20.0,
-            distance_from_cam:  60.0,
-            k_1:                40.0,
-            increment_speed:    0.3,
-            rotation_speed:     0.005,
-            buffer:             vec![' '; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize],
-            z_buffer:           vec![0.0; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize],
+        Self {
+            rotate_x: 0.0,
+            rotate_y: 0.0,
+            rotate_z: 0.0,
+            cube_width: 20.0,
+            distance_from_cam: 60.0,
+            k_1: 40.0,
+            increment_speed: 0.3,
+            rotation_speed: 0.005,
+            buffer: vec![' '; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize],
+            z_buffer: vec![0.0; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize],
+            delta_time: Duration::default(),
+            fps: 0,
+            last_frame: Instant::now(),
         }
     }
 
     fn calculate_x(&self, i: f32, j: f32, k: f32) -> f32 {
-        j * self.rotate_x.sin() * self.rotate_y.sin() * self.rotate_z.cos() - 
-        k * self.rotate_x.cos() * self.rotate_y.sin() * self.rotate_z.cos() +
-        j * self.rotate_x.cos() * self.rotate_z.sin() +
-        k * self.rotate_x.sin() * self.rotate_z.sin() +
-        i * self.rotate_y.cos() * self.rotate_z.cos()
+        j * self.rotate_x.sin() * self.rotate_y.sin() * self.rotate_z.cos()
+            - k * self.rotate_x.cos() * self.rotate_y.sin() * self.rotate_z.cos()
+            + j * self.rotate_x.cos() * self.rotate_z.sin()
+            + k * self.rotate_x.sin() * self.rotate_z.sin()
+            + i * self.rotate_y.cos() * self.rotate_z.cos()
     }
 
     fn calculate_y(&self, i: f32, j: f32, k: f32) -> f32 {
-        j * self.rotate_x.cos() * self.rotate_z.cos() +
-        k * self.rotate_x.sin() * self.rotate_z.cos() - 
-        j * self.rotate_x.sin() * self.rotate_y.sin() * self.rotate_z.sin() +
-        k * self.rotate_x.cos() * self.rotate_y.sin() * self.rotate_z.sin() -
-        i * self.rotate_y.cos() * self.rotate_z.sin()
+        j * self.rotate_x.cos() * self.rotate_z.cos()
+            + k * self.rotate_x.sin() * self.rotate_z.cos()
+            - j * self.rotate_x.sin() * self.rotate_y.sin() * self.rotate_z.sin()
+            + k * self.rotate_x.cos() * self.rotate_y.sin() * self.rotate_z.sin()
+            - i * self.rotate_y.cos() * self.rotate_z.sin()
     }
 
     fn calculate_z(&self, i: f32, j: f32, k: f32) -> f32 {
-        k * self.rotate_x.cos() * self.rotate_y.cos() -
-        j * self.rotate_x.sin() * self.rotate_y.cos() + 
-        i * self.rotate_y.sin()
+        k * self.rotate_x.cos() * self.rotate_y.cos()
+            - j * self.rotate_x.sin() * self.rotate_y.cos()
+            + i * self.rotate_y.sin()
     }
 
     fn calculate_luminance(&self, normal_x: f32, normal_y: f32, normal_z: f32) -> f32 {
@@ -71,15 +92,25 @@ impl SpinningCube {
         (dir_x * light_dir_x) + (dir_y * light_dir_y) + (dir_z * light_dir_z)
     }
 
-    fn calculate_rotated_surface(&mut self, pos_x: f32, pos_y: f32, pos_z: f32, normal_x: f32, normal_y: f32, normal_z: f32) -> Result<()> {
+    fn calculate_rotated_surface(
+        &mut self,
+        pos_x: f32,
+        pos_y: f32,
+        pos_z: f32,
+        normal_x: f32,
+        normal_y: f32,
+        normal_z: f32,
+    ) -> Result<()> {
         // Calculate the rotated position of the surface
         let translated_pos_x: f32 = self.calculate_x(pos_x, pos_y, pos_z);
         let translated_pos_y: f32 = self.calculate_y(pos_x, pos_y, pos_z);
         let translated_pos_z: f32 = self.calculate_z(pos_x, pos_y, pos_z) + self.distance_from_cam;
 
-        let ooz: f32            = 1.0 / translated_pos_z;
-        let screen_pos_x: i32   = (SCREEN_WIDTH as f32 / 2.0 + self.k_1 * ooz * translated_pos_x * 2.0) as i32;
-        let screen_pos_y: i32   = (SCREEN_HEIGHT as f32 / 2.0 + self.k_1 * ooz * translated_pos_y) as i32;
+        let ooz: f32 = 1.0 / translated_pos_z;
+        let screen_pos_x: i32 =
+            (SCREEN_WIDTH as f32 / 2.0 + self.k_1 * ooz * translated_pos_x * 2.0) as i32;
+        let screen_pos_y: i32 =
+            (SCREEN_HEIGHT as f32 / 2.0 + self.k_1 * ooz * translated_pos_y) as i32;
 
         let index: i32 = screen_pos_x + screen_pos_y * SCREEN_WIDTH;
 
@@ -90,12 +121,13 @@ impl SpinningCube {
                 let l: f32 = if luminance > 0.0 { luminance } else { 0.0 };
 
                 let mut luminance_index: i32 = (l * 10.0) as i32;
-                if luminance_index > 10 {
-                    luminance_index = 10;
+                if luminance_index > 8 {
+                    luminance_index = 8;
                 }
 
                 self.z_buffer[index as usize] = ooz;
-                self.buffer[index as usize] = ".,-~:;=*#$@".as_bytes()[luminance_index as usize] as char;
+                self.buffer[index as usize] =
+                    ".,-~:;#$@".as_bytes()[luminance_index as usize] as char;
             }
         }
         Ok(())
@@ -107,55 +139,188 @@ impl SpinningCube {
         Ok(())
     }
 
-    fn print_cube(&self) -> Result<()> {
-        for i in 0..SCREEN_WIDTH * SCREEN_HEIGHT {
-            print!("{}", self.buffer[i as usize]);
+    fn draw_keybinds(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let keybind_text = "Quit:\t\tEsc or Q";
 
-            if i % SCREEN_WIDTH != 0 {
-                print!("\n");
-            }
-        }
+        let block = Paragraph::new(keybind_text)
+            .block(Block::default().title("Keybinds").borders(Borders::ALL))
+            .style(Style::default());
+        frame.render_widget(block, area);
         Ok(())
     }
 
-    pub fn spin(&mut self) -> Result<()> {
+    fn draw_screen_info(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let render_info_text = format!(
+            "Resolution: {}x{}\nFPS: {}\nMS per/frame: {}",
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            self.fps,
+            self.delta_time.as_millis()
+        );
+
+        let block = Paragraph::new(render_info_text)
+            .block(
+                Block::default()
+                    .title("Render information")
+                    .borders(Borders::ALL),
+            )
+            .style(Style::default());
+        frame.render_widget(block, area);
+        Ok(())
+    }
+
+    fn draw_cube(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let buffer = frame.buffer_mut();
+
+        for i in 0..SCREEN_HEIGHT {
+            for j in 0..SCREEN_WIDTH {
+                let cell = &mut buffer[(j as u16, i as u16)]; // can use cell_mut too
+                cell.set_symbol(&self.buffer[(j + i * SCREEN_WIDTH) as usize].to_string());
+            }
+        }
+
+        let block = Block::bordered();
+        frame.render_widget(block, area);
+        Ok(())
+    }
+
+    fn print_frame(&self, terminal: &mut DefaultTerminal) -> Result<()> {
+        terminal.draw(|frame| {
+            let area = frame.area();
+
+            let rows = Layout::vertical([
+                Constraint::Percentage(25), // Row 0 (Top)
+                Constraint::Percentage(25), // Row 1
+                Constraint::Percentage(25), // Row 2
+                Constraint::Percentage(25), // Row 3 (Bottom)
+            ])
+            .split(area);
+
+            // 2. Split Row 0 into 4 columns -> Column 0 is Top-Left
+            let top_row_cols = Layout::horizontal([
+                Constraint::Percentage(25), // Col 0 (Left)
+                Constraint::Percentage(25), // Col 1
+                Constraint::Percentage(25), // Col 2
+                Constraint::Percentage(25), // Col 3
+            ])
+            .split(rows[0]);
+
+            let top_left_rect = top_row_cols[0];
+
+            // 3. Split Row 3 into 4 columns -> Column 0 is Bottom-Left
+            let bottom_row_cols = Layout::horizontal([
+                Constraint::Percentage(25), // Col 0 (Left)
+                Constraint::Percentage(25), // Col 1
+                Constraint::Percentage(25), // Col 2
+                Constraint::Percentage(25), // Col 3
+            ])
+            .split(rows[3]);
+
+            let bottom_left_rect = bottom_row_cols[0];
+
+            self.draw_cube(frame, area);
+            self.draw_screen_info(frame, top_left_rect);
+            self.draw_keybinds(frame, bottom_left_rect);
+        });
+        Ok(())
+    }
+
+    fn print_debug(&self, mut terminal: DefaultTerminal) {
+        for i in 0..SCREEN_HEIGHT {
+            for j in 0..SCREEN_WIDTH {
+                print!("{}", i % 10);
+            }
+            print!("\r\n");
+        }
+    }
+
+    fn should_close(&self) -> Result<bool> {
+        let mut should_close: bool = false;
+
+        if event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key_event) = event::read()? {
+                if key_event.kind == event::KeyEventKind::Press {
+                    match key_event.code {
+                        KeyCode::Esc | KeyCode::Char('q') => should_close = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(should_close)
+    }
+
+    fn calculate_fps(&mut self) {
+        let now = Instant::now();
+        self.delta_time = now.duration_since(self.last_frame);
+        self.last_frame = now;
+        let dt_seconds = self.delta_time.as_secs_f32();
+        self.fps = if dt_seconds > 0.0 {
+            (1.0 / dt_seconds) as u32
+        } else {
+            0
+        };
+    }
+
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.last_frame = Instant::now();
+
         loop {
+            if self.should_close()? {
+                break;
+            }
+
+            self.calculate_fps();
+
             self.clear_buffers()?;
 
-            let mut i: f32 = 0.0;
+            let mut i: f32 = -self.cube_width;
 
             while i < self.cube_width {
-                let mut j: f32 = 0.0;
+                let mut j: f32 = -self.cube_width;
 
                 while j < self.cube_width {
-                    self.calculate_rotated_surface(i, j, self.cube_width,    0.0,  0.0,  1.0)?; // Front  (0, 0, 1)
-                    self.calculate_rotated_surface(-self.cube_width, j, i,  -1.0,  0.0,  0.0)?; // Left   (-1, 0, 0)
-                    self.calculate_rotated_surface(self.cube_width, j, -i,   1.0,  0.0,  0.0)?; // Right  (1, 0, 0)
-                    self.calculate_rotated_surface(i, j, -self.cube_width,   0.0,  0.0, -1.0)?; // Back   (0, 0, -1)
-                    self.calculate_rotated_surface(i, self.cube_width, -j,   0.0,  1.0,  0.0)?; // Top    (0, 1, 0)
-                    self.calculate_rotated_surface(i, -self.cube_width, j,   0.0, -1.0,  0.0)?; // Bottom (0, -1, 0)
+                    self.calculate_rotated_surface(i, j, self.cube_width, 0.0, 0.0, 1.0)?; // Front  (0, 0, 1)
+                    self.calculate_rotated_surface(-self.cube_width, j, i, -1.0, 0.0, 0.0)?; // Left   (-1, 0, 0)
+                    self.calculate_rotated_surface(self.cube_width, j, -i, 1.0, 0.0, 0.0)?; // Right  (1, 0, 0)
+                    self.calculate_rotated_surface(i, j, -self.cube_width, 0.0, 0.0, -1.0)?; // Back   (0, 0, -1)
+                    self.calculate_rotated_surface(i, self.cube_width, -j, 0.0, 1.0, 0.0)?; // Top    (0, 1, 0)
+                    self.calculate_rotated_surface(i, -self.cube_width, j, 0.0, -1.0, 0.0)?; // Bottom (0, -1, 0)
                     j += self.increment_speed;
                 }
 
                 i += self.increment_speed;
             }
 
-            self.print_cube()?;
+            self.print_frame(terminal)?;
 
             self.rotate_x += self.rotation_speed;
             self.rotate_y += self.rotation_speed;
             self.rotate_z += self.rotation_speed;
-
-            thread::sleep(Duration::from_micros(1500));
         }
+
+        Ok(())
     }
 }
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
+    let mut terminal = ratatui::init();
     let mut spinning_cube = SpinningCube::default();
-    spinning_cube.spin()?;
-    Ok(())
+
+    let app_result = spinning_cube.run(&mut terminal);
+
+    ratatui::restore();
+    app_result
 }
 
+// Show widget on window information
+//  show fps
+//  show resolution
+
+// Keybind info
+//  show auto rotate
+//  show quit
+//  show manual rotate
