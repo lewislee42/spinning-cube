@@ -1,19 +1,18 @@
-#![allow(warnings)]
-
 use color_eyre::Result;
 use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton,
+        MouseEventKind,
+    },
+    execute
 };
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::Style,
     widgets::{Block, Borders, Paragraph},
     DefaultTerminal, Frame,
 };
 use std::io::stdout;
-use std::thread;
 use std::time::{Duration, Instant};
 
 const SCREEN_WIDTH: i32 = 338;
@@ -37,6 +36,9 @@ struct SpinningCube {
     delta_time: Duration,
     fps: u32,
     last_frame: Instant,
+
+    click_pos_x: u16,
+    click_pos_y: u16 
 }
 
 impl SpinningCube {
@@ -55,6 +57,8 @@ impl SpinningCube {
             delta_time: Duration::default(),
             fps: 0,
             last_frame: Instant::now(),
+            click_pos_x: 0,
+            click_pos_y: 0
         }
     }
 
@@ -139,23 +143,24 @@ impl SpinningCube {
         Ok(())
     }
 
-    fn draw_keybinds(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+    fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
         let keybind_text = "Quit:\t\tEsc or Q";
 
         let block = Paragraph::new(keybind_text)
             .block(Block::default().title("Keybinds").borders(Borders::ALL))
             .style(Style::default());
         frame.render_widget(block, area);
-        Ok(())
     }
 
-    fn draw_screen_info(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+    fn draw_screen_info(&self, frame: &mut Frame, area: Rect) {
         let render_info_text = format!(
-            "Resolution: {}x{}\nFPS: {}\nMS per/frame: {}",
+            "Resolution: {}x{}\nFPS: {}\nMS per/frame: {}\nClicked: X:{}, Y{}",
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
             self.fps,
-            self.delta_time.as_millis()
+            self.delta_time.as_millis(),
+            self.click_pos_x,
+            self.click_pos_y
         );
 
         let block = Paragraph::new(render_info_text)
@@ -166,10 +171,9 @@ impl SpinningCube {
             )
             .style(Style::default());
         frame.render_widget(block, area);
-        Ok(())
     }
 
-    fn draw_cube(&self, frame: &mut Frame, area: Rect) -> Result<()> {
+    fn draw_cube(&self, frame: &mut Frame, area: Rect) {
         let buffer = frame.buffer_mut();
 
         for i in 0..SCREEN_HEIGHT {
@@ -181,7 +185,6 @@ impl SpinningCube {
 
         let block = Block::bordered();
         frame.render_widget(block, area);
-        Ok(())
     }
 
     fn print_frame(&self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -189,19 +192,21 @@ impl SpinningCube {
             let area = frame.area();
 
             let rows = Layout::vertical([
-                Constraint::Percentage(25), // Row 0 (Top)
-                Constraint::Percentage(25), // Row 1
-                Constraint::Percentage(25), // Row 2
-                Constraint::Percentage(25), // Row 3 (Bottom)
+                Constraint::Percentage(20), // Row 0 (Top)
+                Constraint::Percentage(20), // Row 1
+                Constraint::Percentage(20), // Row 2
+                Constraint::Percentage(20), // Row 3
+                Constraint::Percentage(20), // Row 4 (Bottom)
             ])
             .split(area);
 
             // 2. Split Row 0 into 4 columns -> Column 0 is Top-Left
             let top_row_cols = Layout::horizontal([
-                Constraint::Percentage(25), // Col 0 (Left)
-                Constraint::Percentage(25), // Col 1
-                Constraint::Percentage(25), // Col 2
-                Constraint::Percentage(25), // Col 3
+                Constraint::Percentage(20), // Col 0 (Left)
+                Constraint::Percentage(20), // Col 1
+                Constraint::Percentage(20), // Col 2
+                Constraint::Percentage(20), // Col 3
+                Constraint::Percentage(20), // Col 4
             ])
             .split(rows[0]);
 
@@ -209,43 +214,50 @@ impl SpinningCube {
 
             // 3. Split Row 3 into 4 columns -> Column 0 is Bottom-Left
             let bottom_row_cols = Layout::horizontal([
-                Constraint::Percentage(25), // Col 0 (Left)
-                Constraint::Percentage(25), // Col 1
-                Constraint::Percentage(25), // Col 2
-                Constraint::Percentage(25), // Col 3
+                Constraint::Percentage(20), // Col 0 (Left)
+                Constraint::Percentage(20), // Col 1
+                Constraint::Percentage(20), // Col 2
+                Constraint::Percentage(20), // Col 3
+                Constraint::Percentage(20), // Col 4
             ])
-            .split(rows[3]);
+            .split(rows[4]);
 
             let bottom_left_rect = bottom_row_cols[0];
 
             self.draw_cube(frame, area);
             self.draw_screen_info(frame, top_left_rect);
             self.draw_keybinds(frame, bottom_left_rect);
-        });
+        })?;
         Ok(())
     }
 
-    fn print_debug(&self, mut terminal: DefaultTerminal) {
-        for i in 0..SCREEN_HEIGHT {
-            for j in 0..SCREEN_WIDTH {
-                print!("{}", i % 10);
-            }
-            print!("\r\n");
-        }
-    }
-
-    fn should_close(&self) -> Result<bool> {
+    // need to extract this to it's own handler
+    fn should_close(&mut self) -> Result<bool> {
         let mut should_close: bool = false;
+        let max_event = 10; // idk why but processing 5 is too laggy and 1 causes events to be
+        // delayed but 2 is just right
+        let mut processed = 0;
 
-        if event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key_event) = event::read()? {
-                if key_event.kind == event::KeyEventKind::Press {
-                    match key_event.code {
-                        KeyCode::Esc | KeyCode::Char('q') => should_close = true,
-                        _ => {}
+        while processed < max_event && event::poll(Duration::ZERO)? {
+
+            match event::read()? { // event::read is a blocking function
+                Event::Key(key_event) => {
+                    if key_event.kind == event::KeyEventKind::Press {
+                        match key_event.code {
+                            KeyCode::Esc | KeyCode::Char('q') => should_close = true,
+                            _ => {}
+                        }
                     }
-                }
+                },
+                Event::Mouse(mouse_event) => {
+                    if let MouseEventKind::Drag(MouseButton::Left) = mouse_event.kind {
+                        self.click_pos_x = mouse_event.column; // x position (0-indexed)
+                        self.click_pos_y = mouse_event.row; // y position (0-indexed)
+                    }
+                },
+                _ => {}
             }
+            processed += 1;
         }
 
         Ok(should_close)
@@ -304,23 +316,24 @@ impl SpinningCube {
     }
 }
 
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
     let mut terminal = ratatui::init();
-    let mut spinning_cube = SpinningCube::default();
+    let mut app = SpinningCube::default();
+    let mut stdout = stdout();
 
-    let app_result = spinning_cube.run(&mut terminal);
+    execute!(stdout, EnableMouseCapture)?;
 
+    let app_result = app.run(&mut terminal);
+
+    execute!(stdout, DisableMouseCapture)?;
     ratatui::restore();
     app_result
 }
 
-// Show widget on window information
-//  show fps
-//  show resolution
-
 // Keybind info
-//  show auto rotate
 //  show quit
+//  show auto rotate
 //  show manual rotate
