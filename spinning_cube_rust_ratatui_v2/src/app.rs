@@ -32,7 +32,17 @@ pub struct App {
 }
 
 impl App {
-    pub fn default(screen_width: u32, screen_height: u32) -> Self {
+    pub fn default() -> Self {
+        let screen_width: u32;
+        let screen_height: u32;
+
+        if let Ok((width, height)) = crossterm::terminal::size() {
+            screen_width = width as u32;
+            screen_height = height as u32;
+        } else {
+            std::process::exit(1);
+        }
+
         Self {
             delta_time: Duration::default(),
             fps: 0,
@@ -95,7 +105,7 @@ impl App {
     }
 
     fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
-        let keybind_text = "Quit:\t\tEsc or Q";
+        let keybind_text = "Quit: Esc or Q";
 
         let block = Paragraph::new(keybind_text)
             .block(Block::default().title("Keybinds").borders(Borders::ALL))
@@ -103,9 +113,24 @@ impl App {
         frame.render_widget(block, area);
     }
 
+    fn draw_object_info(&self, frame: &mut Frame, area: Rect) {
+        let render_info_text = format!(
+            "Something"
+        );
+
+        let block = Paragraph::new(render_info_text)
+            .block(
+                Block::default()
+                    .title("Object information")
+                    .borders(Borders::ALL),
+            )
+            .style(Style::default());
+        frame.render_widget(block, area);
+    }
+
     fn draw_screen_info(&self, frame: &mut Frame, area: Rect) {
         let render_info_text = format!(
-            "Resolution: {}x{}\nFPS: {}\nMS per/frame: {}\nClicked: X:{}, Y{}\nDrag dir: X:{}, Y:{}, Z:{}\nIs dragging: {}",
+            "Resolution: {}x{}\nFPS: {}\nMS per/frame: {}\nClicked: X:{}, Y:{}\nDrag dir: X:{}, Y:{}, Z:{}\nIs dragging: {}",
             self.screen_width,
             self.screen_height,
             self.fps,
@@ -146,42 +171,31 @@ impl App {
         terminal.draw(|frame| {
             let area = frame.area();
 
-            let rows = Layout::vertical([
-                Constraint::Percentage(20), // Row 0 (Top)
-                Constraint::Percentage(20), // Row 1
-                Constraint::Percentage(20), // Row 2
-                Constraint::Percentage(20), // Row 3
-                Constraint::Percentage(20), // Row 4 (Bottom)
+            let columns = Layout::horizontal([
+                Constraint::Percentage(20), // Col 0 (Left)
+                Constraint::Percentage(20), // Col 1
+                Constraint::Percentage(20), // Col 2
+                Constraint::Percentage(20), // Col 3
+                Constraint::Percentage(20), // Col 4 (Right)
             ])
             .split(area);
 
             // 2. Split Row 0 into 4 columns -> Column 0 is Top-Left
-            let top_row_cols = Layout::horizontal([
-                Constraint::Percentage(20), // Col 0 (Left)
-                Constraint::Percentage(20), // Col 1
-                Constraint::Percentage(20), // Col 2
-                Constraint::Percentage(20), // Col 3
-                Constraint::Percentage(20), // Col 4
+            let first_column = Layout::vertical([
+                Constraint::Percentage(40), // Row 0 (Top)
+                Constraint::Percentage(30), // Row 1
+                Constraint::Percentage(30), // Row 2 (Bottom)
             ])
-            .split(rows[0]);
+            .split(columns[0]);
 
-            let top_left_rect = top_row_cols[0];
-
-            // 3. Split Row 3 into 4 columns -> Column 0 is Bottom-Left
-            let bottom_row_cols = Layout::horizontal([
-                Constraint::Percentage(20), // Col 0 (Left)
-                Constraint::Percentage(20), // Col 1
-                Constraint::Percentage(20), // Col 2
-                Constraint::Percentage(20), // Col 3
-                Constraint::Percentage(20), // Col 4
-            ])
-            .split(rows[4]);
-
-            let bottom_left_rect = bottom_row_cols[0];
+            let top_cell = first_column[0];
+            let middle_cell = first_column[1];
+            let bottom_cell = first_column[2];
 
             self.draw_cube(frame, area);
-            self.draw_screen_info(frame, top_left_rect);
-            self.draw_keybinds(frame, bottom_left_rect);
+            self.draw_screen_info(frame, top_cell);
+            self.draw_object_info(frame, middle_cell);
+            self.draw_keybinds(frame, bottom_cell);
         })?;
         Ok(())
     }
@@ -199,8 +213,8 @@ impl App {
     }
 
     fn handle_object_rotation(&mut self) {
-        let mut rotate_amount: Vec3;
-        if (self.input_handler.is_dragging == true) {
+        let rotate_amount: Vec3;
+        if self.input_handler.is_dragging == true {
             self.object.rotation_velocity = self.input_handler.drag_dir;
         }
         rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;

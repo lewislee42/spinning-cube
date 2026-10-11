@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let mut terminal = ratatui::init();
-    let mut app = App::default(336, 91);
+    let mut app = App::default();
     let mut stdout = stdout();
 
     execute!(stdout, EnableMouseCapture)?;
@@ -31,7 +31,3 @@ fn main() -> Result<()> {
     app_result
 }
 
-// Keybind info
-//  show auto rotate
-//  show quit
-//  show manual rotate

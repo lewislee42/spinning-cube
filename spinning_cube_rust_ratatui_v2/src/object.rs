@@ -6,7 +6,7 @@
 //   By: lewislee <lewlee@student.42.fr>            +#+  +:+       +#+        //
 //                                                +#+#+#+#+#+   +#+           //
 //   Created: 2026/10/11 18:38:22 by lewislee          #+#    #+#             //
-//   Updated: 2026/10/11 19:17:41 by lewislee         ###   ########.fr       //
+//   Updated: 2026/10/11 22:38:06 by lewislee         ###   ########.fr       //
 //                                                                            //
 // ************************************************************************** //
 
@@ -16,7 +16,6 @@ use crate::vec3::Vec3;
 pub struct Object {
     pub rotation_matrix: Matrix3, // Not used as of now
     pub rotation_velocity: Vec3,
-    pub rotation_speed: f32,
 
     // Temp variables to remove in the future
     pub width: f32,
@@ -28,7 +27,6 @@ impl Object {
         Self {
             rotation_matrix: Matrix3::identity(),
             rotation_velocity: Vec3::default(),
-            rotation_speed: 0.005,
             width: 20.0,
             increment_speed: 0.3,
         }
@@ -48,6 +46,7 @@ impl Object {
         let delta_matrix_x = Matrix3::rotation_x(rotation_amount.x);
         let delta_matrix_y = Matrix3::rotation_y(rotation_amount.y);
 
+        // need to understand how using this method works
         let combined_delta = delta_matrix_y.multiply(&delta_matrix_x);
         self.rotation_matrix = combined_delta.multiply(&self.rotation_matrix);
     }
