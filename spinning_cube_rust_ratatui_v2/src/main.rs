@@ -3,6 +3,7 @@ mod vec3;
 mod object;
 mod input_handler;
 mod matrix;
+mod display_manager;
 
 use color_eyre::Result;
 use crossterm::{
