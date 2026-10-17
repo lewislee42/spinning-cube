@@ -4,7 +4,7 @@ use std::ops;
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
-    pub z: f32
+    pub z: f32,
 }
 
 impl Vec3 {
@@ -12,16 +12,12 @@ impl Vec3 {
         Self {
             x: 0.0,
             y: 0.0,
-            z: 0.0
+            z: 0.0,
         }
     }
 
     pub fn default_vec(x: f32, y: f32, z: f32) -> Self {
-        Self {
-            x: x,
-            y: y,
-            z: z
-        }
+        Self { x: x, y: y, z: z }
     }
 
     pub fn length_squared(&self) -> f32 {
@@ -31,14 +27,38 @@ impl Vec3 {
     pub fn length(&self) -> f32 {
         self.length_squared().sqrt()
     }
-    
+
     pub fn normalize(&self) -> Self {
         let len = self.length();
         Self {
             x: self.x / len,
             y: self.y / len,
-            z: self.z / len
+            z: self.z / len,
         }
+    }
+
+    pub fn clamp(&self, min: f32, max: f32) -> Self {
+        let mut x: f32 = self.x;
+        if self.x < min {
+            x = min
+        } else if self.x > max {
+            x = max
+        }
+
+        let mut y: f32 = self.y;
+        if self.y < min {
+            y = min
+        } else if self.y > max {
+            y = max
+        }
+
+        let mut z: f32 = self.z;
+        if self.z < min {
+            z = min
+        } else if self.z > max {
+            z = max
+        }
+        Self { x: x, y: y, z: z }
     }
 }
 
@@ -69,7 +89,7 @@ impl ops::Sub<f32> for Vec3 {
         Self {
             x: self.x - _rhs,
             y: self.y - _rhs,
-            z: self.z - _rhs
+            z: self.z - _rhs,
         }
     }
 }

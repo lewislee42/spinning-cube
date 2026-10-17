@@ -1,13 +1,14 @@
 use crate::input_handler::InputHandler;
 use crate::vec3::Vec3;
-use crate::{display_manager::{DisplayManager, RendererInfo, ObjectInfo}, object::Object };
+use crate::{
+    display_manager::{DisplayManager, ObjectInfo, RendererInfo},
+    object::Object,
+};
 
 use color_eyre::Result;
 use std::time::{Duration, Instant};
 
-use ratatui::{
-    DefaultTerminal
-};
+use ratatui::DefaultTerminal;
 
 pub struct App {
     delta_time: Duration,
@@ -39,8 +40,8 @@ impl App {
             buffer: vec![],
             z_buffer: vec![],
         };
-        let render_width = app.display_manager.render_area.width; 
-        let render_height = app.display_manager.render_area.height; 
+        let render_width = app.display_manager.render_area.width;
+        let render_height = app.display_manager.render_area.height;
 
         app.buffer = vec![' '; (render_width * render_height) as usize];
         app.z_buffer = vec![0.0; (render_width * render_height) as usize];
@@ -60,18 +61,15 @@ impl App {
     fn calculate_screen_pos(&mut self, point: &Vec3, normal: &Vec3) -> Result<()> {
         let rotated_point = self.object.apply_rotation_on_point(point);
         let k_1 = 40.0;
-        let render_width = self.display_manager.render_area.width; 
-        let render_height = self.display_manager.render_area.height; 
-
+        let render_width = self.display_manager.render_area.width;
+        let render_height = self.display_manager.render_area.height;
 
         let ooz: f32 = 1.0 / (rotated_point.z + self.object_distance);
         let screen_pos_x: i32 =
             (render_width as f32 / 2.0 + k_1 * ooz * rotated_point.x * 2.0) as i32;
-        let screen_pos_y: i32 =
-            (render_height as f32 / 2.0 + k_1 * ooz * rotated_point.y) as i32;
+        let screen_pos_y: i32 = (render_height as f32 / 2.0 + k_1 * ooz * rotated_point.y) as i32;
 
         let index: i32 = (screen_pos_x + screen_pos_y * render_width as i32) as i32;
-        // println!("index: {}", index);
 
         if index >= 0 && index < (render_width as i32 * render_height as i32) as i32 {
             if ooz > self.z_buffer[index as usize] {
@@ -100,7 +98,8 @@ impl App {
     fn print_frame(&self, terminal: &mut DefaultTerminal) -> Result<()> {
         let renderer_info = self.get_renderer_info();
         let object_info = self.get_object_info();
-        self.display_manager.print_frame(terminal, &renderer_info, &object_info, &self.buffer)
+        self.display_manager
+            .print_frame(terminal, &renderer_info, &object_info, &self.buffer)
     }
 
     fn get_renderer_info(&self) -> RendererInfo {
@@ -110,14 +109,16 @@ impl App {
             clicked_x: self.input_handler.clicked_x,
             clicked_y: self.input_handler.clicked_y,
             drag_dir: self.input_handler.drag_dir,
-            is_dragging: self.input_handler.is_dragging
+            is_dragging: self.input_handler.is_dragging,
+            selected_pane: self.input_handler.selected_pane,
         }
     }
 
     fn get_object_info(&self) -> ObjectInfo {
-        ObjectInfo {}
+        ObjectInfo {
+            rotation_velocity: self.object.rotation_velocity,
+        }
     }
-
 
     fn calculate_fps(&mut self) {
         let now = Instant::now();
@@ -132,11 +133,10 @@ impl App {
     }
 
     fn handle_object_rotation(&mut self) {
-        let rotate_amount: Vec3;
         if self.input_handler.is_dragging == true {
             self.object.rotation_velocity = self.input_handler.drag_dir;
         }
-        rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;
+        let mut rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;
         //   rotate_amount = Vec3::default_vec(self.object.rotation_speed, self.object.rotation_speed, self.object.rotation_speed);
 
         self.object.rotate(&rotate_amount);
@@ -198,11 +198,6 @@ impl App {
 
             self.handle_object_rotation();
 
-            // self.object.rotate(&Vec3::default_vec(
-            //     self.object_rotation_speed,
-            //     self.object_rotation_speed,
-            //     self.object_rotation_speed,
-            // ))
         }
 
         Ok(())
