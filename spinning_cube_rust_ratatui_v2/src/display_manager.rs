@@ -32,8 +32,8 @@ pub enum Panes {
 
 pub struct DisplayManager {
     pub obj_render_area: Rect,
-    renderer_info_pane_scroll: f32,
-    object_info_pane_scroll: f32,
+    // renderer_info_pane_scroll: f32,
+    // object_info_pane_scroll: f32,
 }
 
 impl DisplayManager {
@@ -50,8 +50,8 @@ impl DisplayManager {
 
         Self {
             obj_render_area: render_sections[1],
-            renderer_info_pane_scroll: 5.0,
-            object_info_pane_scroll: 5.0,
+            // renderer_info_pane_scroll: 5.0,
+            // object_info_pane_scroll: 5.0,
         }
     }
 

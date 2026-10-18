@@ -22,10 +22,10 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn default() -> Self {
+    pub fn default(pos: Vec3, dir: Vec3) -> Self {
         let mut camera = Self {
-            center: Vec3::default(),
-            direction: Vec3::default(),
+            center: pos,
+            direction: dir,
             viewport_width: 0.0,
             viewport_height: 0.0,
 

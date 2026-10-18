@@ -6,6 +6,7 @@ use crate::{
 };
 
 use color_eyre::Result;
+use std::cmp::max;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
@@ -19,7 +20,6 @@ pub struct App {
     display_manager: DisplayManager,
 
     object: Object,
-    object_distance: f32,
     object_rotation_speed: f32,
 
     buffer: Vec<char>, // Change to use image/frame instead
@@ -37,7 +37,6 @@ impl App {
             input_handler: InputHandler::default(),
             display_manager: DisplayManager::default(),
             object: Object::default(),
-            object_distance: 60.0,
             object_rotation_speed: 0.005,
             buffer: vec![],
             z_buffer: vec![],
@@ -49,48 +48,6 @@ impl App {
         app.buffer = vec![' '; (render_width * render_height) as usize];
         app.z_buffer = vec![0.0; (render_width * render_height) as usize];
         app
-    }
-
-    fn calculate_luminance(&mut self, normal: &Vec3) -> f32 {
-        // Light direction normalized
-        let light_dir_x: f32 = 0.0;
-        let light_dir_y: f32 = 0.7071;
-        let light_dir_z: f32 = -0.7071;
-
-        let dir = self.object.apply_rotation_on_point(normal);
-        (dir.x * light_dir_x) + (dir.y * light_dir_y) + (dir.z * light_dir_z)
-    }
-
-    fn calculate_screen_pos(&mut self, point: &Vec3, normal: &Vec3) -> Result<()> {
-        let rotated_point = self.object.apply_rotation_on_point(point);
-        let k_1 = 40.0;
-        let render_width = self.display_manager.obj_render_area.width;
-        let render_height = self.display_manager.obj_render_area.height;
-
-        let ooz: f32 = 1.0 / (rotated_point.z + self.object_distance);
-        let screen_pos_x: i32 =
-            (render_width as f32 / 2.0 + k_1 * ooz * rotated_point.x * 2.0) as i32;
-        let screen_pos_y: i32 = (render_height as f32 / 2.0 + k_1 * ooz * rotated_point.y) as i32;
-
-        let index: i32 = (screen_pos_x + screen_pos_y * render_width as i32) as i32;
-
-        if index >= 0 && index < (render_width as i32 * render_height as i32) as i32 {
-            if ooz > self.z_buffer[index as usize] {
-                let luminance: f32 = self.calculate_luminance(normal);
-
-                let l: f32 = if luminance > 0.0 { luminance } else { 0.0 };
-
-                let mut luminance_index: i32 = (l * 8.0) as i32;
-                if luminance_index > 8 {
-                    luminance_index = 8;
-                }
-
-                self.z_buffer[index as usize] = ooz;
-                self.buffer[index as usize] =
-                    ".,-~:;#$@".as_bytes()[luminance_index as usize] as char;
-            }
-        }
-        Ok(())
     }
 
     fn clear_buffers(&mut self) {
@@ -156,7 +113,7 @@ impl App {
             self.object.rotation_velocity = self.input_handler.drag_dir;
         }
 
-        let mut rotate_amount: Vec3;
+        let rotate_amount: Vec3;
         self.is_auto_rotating = self.should_auto_rotate();
         if self.is_auto_rotating == false {
             rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;
@@ -166,6 +123,97 @@ impl App {
         }
 
         self.object.rotate(&rotate_amount);
+    }
+
+    fn calculate_update_object_v2(&mut self) {
+        let ray_origin = Vec3::default_vec(0.0, 0.0, -3.0);
+        let screen_width = self.display_manager.obj_render_area.width as f32;
+        let screen_height = self.display_manager.obj_render_area.height as f32;
+
+        for i in 0..screen_height as i32 {
+            for j in 0..screen_width as i32 {
+                let u = (j as f32 - 0.5 * screen_width) / screen_height;
+                let v = (i as f32 - 0.5 * screen_height) / screen_height * 2.0;
+                let mut color = Vec3::default_vec(0.0, 0.0, 0.0);
+
+                let ray_dir = Vec3::default_vec(u, v, 1.0).normalize();
+
+                let distance = self.ray_march(ray_origin, ray_dir);
+
+                if distance < 100.0 {
+                    let point = ray_origin + ray_dir * distance;
+                    let normal = self.get_normal(point);
+
+                    let light_position = Vec3::default_vec(1.0, 2.0, -3.0);
+                    let light_direction = (light_position - point).normalize();
+
+                    let diffuse = f32::max(normal.dot(light_direction), 0.0);
+
+                    color = Vec3::default_vec(0.9, 0.2, 0.3) * diffuse + Vec3::default_n(0.5);
+                }
+                color.x = color.x * 10.0;
+                color.x = color.x.clamp(0.0, 9.0);
+                let luminance_index = color.x as usize;
+                let index: i32 = (j + i * screen_width as i32) as i32;
+                self.buffer[index as usize] = " .,-~:;#$@".as_bytes()[luminance_index] as char;
+            }
+        }
+    }
+
+    fn get_normal(&mut self, point: Vec3) -> Vec3 {
+        let distance = self.find_closest_obj(point);
+        let e_x = 0.01;
+        let e_y = 0.0;
+
+        let e_conf1 = Vec3::default_vec(e_x, e_y, e_y);
+        let e_conf2 = Vec3::default_vec(e_y, e_x, e_y);
+        let e_conf3 = Vec3::default_vec(e_y, e_y, e_x);
+
+        let normal = distance
+            - Vec3::default_vec(
+                self.find_closest_obj(point - e_conf1),
+                self.find_closest_obj(point - e_conf2),
+                self.find_closest_obj(point - e_conf3),
+            );
+
+        normal.normalize()
+    }
+
+    fn ray_march(&mut self, ray_ori: Vec3, ray_dir: Vec3) -> f32 {
+        let mut distance_traveled = 0.0;
+        let max_step = 100;
+        let surface_threshold = 0.001;
+        let max_distance = 100.0;
+
+        for i in 0..max_step {
+            let point = ray_ori + ray_dir * distance_traveled;
+
+            let distance_to_closest_obj = self.find_closest_obj(point);
+
+            distance_traveled += distance_to_closest_obj;
+
+            if distance_to_closest_obj < surface_threshold || distance_traveled > max_distance {
+                break;
+            }
+        }
+
+        distance_traveled
+    }
+
+    fn find_closest_obj(&mut self, point: Vec3) -> f32 {
+        let p = self.object.apply_rotation_on_point(&point);
+        let cube_p = self.object.apply_rotation_on_point(&Vec3::default());
+
+        let local_p = p - cube_p;
+
+        let cube_size = Vec3::default_n(0.75);
+        self.sd_cube(local_p, cube_size)
+    }
+
+    fn sd_cube(&self, point: Vec3, cube_size: Vec3) -> f32 {
+        let q = point.abs() - cube_size;
+
+        Vec3::max(q, Vec3::default()).length() + q.x.max(q.y.max(q.z)).min(0.0)
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -182,41 +230,8 @@ impl App {
 
             self.clear_buffers();
 
-            let mut i: f32 = -self.object.width;
-
-            while i < self.object.width {
-                let mut j: f32 = -self.object.width;
-
-                while j < self.object.width {
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(i, j, self.object.width),
-                        &Vec3::default_vec(0.0, 0.0, 1.0),
-                    )?; // Front  (0, 0, 1)
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(-self.object.width, j, i),
-                        &Vec3::default_vec(-1.0, 0.0, 0.0),
-                    )?; // Left   (-1, 0, 0)
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(self.object.width, j, -i),
-                        &Vec3::default_vec(1.0, 0.0, 0.0),
-                    )?; // Right  (1, 0, 0)
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(i, j, -self.object.width),
-                        &Vec3::default_vec(0.0, 0.0, -1.0),
-                    )?; // Back   (0, 0, -1)
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(i, self.object.width, -j),
-                        &Vec3::default_vec(0.0, 1.0, 0.0),
-                    )?; // Top    (0, 1, 0)
-                    self.calculate_screen_pos(
-                        &Vec3::default_vec(i, -self.object.width, j),
-                        &Vec3::default_vec(0.0, -1.0, 0.0),
-                    )?; // Bottom (0, -1, 0)
-                    j += self.object.increment_speed;
-                }
-
-                i += self.object.increment_speed;
-            }
+            // self.calculate_updated_object()?;
+            self.calculate_update_object_v2();
 
             self.print_frame(terminal)?;
 

@@ -69,7 +69,7 @@ impl InputHandler {
             dx = dx.clamp(-MAX_SPIN_SPEED, MAX_SPIN_SPEED);
             dy = dy.clamp(-MAX_SPIN_SPEED, MAX_SPIN_SPEED);
 
-            self.drag_dir = Vec3::default_vec(dy, -dx, 0.0);
+            self.drag_dir = Vec3::default_vec(-dy, dx, 0.0);
         }
 
         self.drag_prev_x = mouse_event.column;

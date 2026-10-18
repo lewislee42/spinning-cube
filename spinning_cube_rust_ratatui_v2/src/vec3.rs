@@ -20,6 +20,10 @@ impl Vec3 {
         Self { x: x, y: y, z: z }
     }
 
+    pub fn default_n(n: f32) -> Self {
+        Self { x: n, y: n, z: n }
+    }
+
     pub fn length_squared(&self) -> f32 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
@@ -42,6 +46,35 @@ impl Vec3 {
             x: self.y * v.z - self.z * v.y,
             y: self.z * v.x - self.x * v.z,
             z: self.x * v.y - self.y * v.x,
+        }
+    }
+
+    pub fn dot(&self, v: Vec3) -> f32 {
+        self.x * v.x + self.y * v.y + self.z * v.z
+    }
+
+    pub fn abs(&self) -> Self {
+        let mut x = self.x;
+        if x < 0.0 {
+            x = -x;
+        }
+        let mut y = self.y;
+        if y < 0.0 {
+            y = -y;
+        }
+        let mut z = self.z;
+        if z < 0.0 {
+            z = -z;
+        }
+
+        Self { x: x, y: y, z: z }
+    }
+
+    pub fn max(v1: Vec3, v2: Vec3) -> Vec3 {
+        Self {
+            x: v1.x.max(v2.x),
+            y: v1.y.max(v2.y),
+            z: v1.z.max(v2.z),
         }
     }
 }
@@ -139,14 +172,10 @@ impl ops::Mul<Vec3> for f32 {
     }
 }
 
-// impl ops::Div<Vec3> for f32 {
-//     type Output = Vec3;
-//
-//     fn div(self, rhs: Vec3) -> Self::Output {
-//         Self {
-//             x: self.x / rhs,
-//             y: self.y / rhs,
-//             z: self.z / rhs,
-//         }
-//     }
-// }
+impl ops::Sub<Vec3> for f32 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: Vec3) -> Self::Output {
+        Vec3::default_vec(self - rhs.x, self - rhs.y, self - rhs.z)
+    }
+}

@@ -48,6 +48,6 @@ impl Object {
 
         // need to understand how using this method works
         let combined_delta = delta_matrix_y.multiply(&delta_matrix_x);
-        self.rotation_matrix = combined_delta.multiply(&self.rotation_matrix);
+        self.rotation_matrix = self.rotation_matrix.multiply(&combined_delta);
     }
 }
