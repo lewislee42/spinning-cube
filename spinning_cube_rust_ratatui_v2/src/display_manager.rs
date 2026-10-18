@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Paragraph, Padding},
+    widgets::{Block, Borders, Padding, Paragraph},
     DefaultTerminal, Frame,
 };
 
@@ -17,6 +17,7 @@ pub struct RendererInfo {
     pub drag_dir: Vec3,
     pub is_dragging: bool,
     pub selected_pane: Panes,
+    pub is_auto_rotating: bool,
 }
 
 pub struct ObjectInfo {
@@ -30,7 +31,7 @@ pub enum Panes {
 }
 
 pub struct DisplayManager {
-    pub render_area: Rect,
+    pub obj_render_area: Rect,
     renderer_info_pane_scroll: f32,
     object_info_pane_scroll: f32,
 }
@@ -48,14 +49,14 @@ impl DisplayManager {
         let render_sections = Self::get_render_area(container_rect);
 
         Self {
-            render_area: render_sections[1],
+            obj_render_area: render_sections[1],
             renderer_info_pane_scroll: 5.0,
             object_info_pane_scroll: 5.0,
         }
     }
 
     pub fn print_frame(
-        &self,
+        &mut self,
         terminal: &mut DefaultTerminal,
         renderer_info: &RendererInfo,
         object_info: &ObjectInfo,
@@ -65,6 +66,7 @@ impl DisplayManager {
             let area = frame.area();
 
             let (object_area, top_cell, middle_cell, bottom_cell) = self.split_frame(area);
+            self.obj_render_area = object_area;
 
             self.draw_title(frame, top_cell);
 
@@ -76,7 +78,7 @@ impl DisplayManager {
 
             self.draw_keybinds(frame, bottom_cell);
 
-            self.draw_object(frame, object_area, buffer);
+            self.draw_object(frame, buffer);
         })?;
         Ok(())
     }
@@ -111,69 +113,85 @@ impl DisplayManager {
     }
 
     fn draw_renderer_info(&self, frame: &mut Frame, area: Rect, renderer_info: &RendererInfo) {
-        let block = Paragraph::new(vec![
-            Line::styled("Frames info", Style::default().add_modifier(Modifier::BOLD)),
-            Line::styled(
-                format!(
-                    "FPS: {} | Frametime: {}ms",
-                    renderer_info.fps, renderer_info.delta_time
-                ),
-                Style::default(),
-            ),
-            Line::styled("Input info", Style::default().add_modifier(Modifier::BOLD)),
-            Line::styled(
-                format!(
-                    "Clicked: X:{}, Y:{}",
-                    renderer_info.clicked_x, renderer_info.clicked_y
-                ),
-                Style::default(),
-            ),
-            Line::styled(
-                format!(
-                    "Drag direction: X:{}, Y:{}, Z:{}",
-                    renderer_info.drag_dir.x, renderer_info.drag_dir.y, renderer_info.drag_dir.z
-                ),
-                Style::default(),
-            ),
-            Line::styled(
-                format!("Is dragging?: {}", renderer_info.is_dragging),
-                Style::default(),
-            ),
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" State information ")
+            .padding(Padding {
+                left: 1,
+                right: 1,
+                top: 0,
+                bottom: 0,
+            });
+
+        let left_block = Paragraph::new(vec![
+            Line::from("FPS:"),
+            Line::from("Frametime:"),
+            Line::from("Clicked:"),
+            Line::from("Drag direction:"),
+            Line::from("Is dragging?:"),
+            Line::from("Auto rotate:"),
         ])
-        .block(Block::default().borders(Borders::ALL))
-        .style(Style::default());
-        frame.render_widget(block, area);
+        .block(block.clone())
+        .alignment(Alignment::Left);
+
+        let right_block = Paragraph::new(vec![
+            Line::from(format!("{}", renderer_info.fps,)),
+            Line::from(format!("{}", renderer_info.delta_time)),
+            Line::from(format!(
+                "X:{}, Y:{}",
+                renderer_info.clicked_x, renderer_info.clicked_y
+            )),
+            Line::from(format!(
+                "X:{}, Y:{}, Z:{}",
+                renderer_info.drag_dir.x, renderer_info.drag_dir.y, renderer_info.drag_dir.z
+            )),
+            Line::from(format!("{}", renderer_info.is_dragging)),
+            Line::from(format!("{}", renderer_info.is_auto_rotating)),
+        ])
+        .block(block.clone())
+        .alignment(Alignment::Right);
+
+        frame.render_widget(left_block, area);
+        frame.render_widget(right_block, area);
     }
 
     fn draw_object_info(&self, frame: &mut Frame, area: Rect, object_info: &ObjectInfo) {
-        let block = Paragraph::new(vec![
-            Line::styled(
-                "Rotation info",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-            Line::styled(
-                format!(
-                    "Rotation velocity: Pitch:{}, Yaw:{}",
-                    object_info.rotation_velocity.x, object_info.rotation_velocity.y
-                ),
-                Style::default(),
-            ),
-        ])
-        .block(Block::default().borders(Borders::ALL))
-        .style(Style::default());
-        frame.render_widget(block, area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Object information ")
+            .padding(Padding {
+                left: 1,
+                right: 1,
+                top: 0,
+                bottom: 0,
+            });
+
+        let left_block = Paragraph::new(vec![Line::styled("Rotation velocity:", Style::default())])
+            .block(block.clone())
+            .alignment(Alignment::Left)
+            .style(Style::default());
+
+        let right_block = Paragraph::new(vec![Line::from(format!(
+            "Pitch:{:.3}, Yaw:{:.3}",
+            object_info.rotation_velocity.x, object_info.rotation_velocity.y
+        ))])
+        .block(block.clone())
+        .alignment(Alignment::Right);
+
+        frame.render_widget(left_block, area);
+        frame.render_widget(right_block, area);
     }
 
-    fn draw_object(&self, frame: &mut Frame, area: Rect, buffer: &Vec<char>) {
+    fn draw_object(&self, frame: &mut Frame, buffer: &Vec<char>) {
         let frame_buffer = frame.buffer_mut();
 
-        for y in 1..self.render_area.height - 1 {
-            for x in 1..self.render_area.width - 1 {
-                let screen_x = area.x + x as u16;
-                let screen_y = area.y + y as u16;
+        for y in 1..self.obj_render_area.height - 1 {
+            for x in 1..self.obj_render_area.width - 1 {
+                let screen_x = self.obj_render_area.x + x as u16;
+                let screen_y = self.obj_render_area.y + y as u16;
 
                 if let Some(cell) = frame_buffer.cell_mut((screen_x, screen_y)) {
-                    cell.set_char(buffer[(x + y * self.render_area.width) as usize]);
+                    cell.set_char(buffer[(x + y * self.obj_render_area.width) as usize]);
                 }
             }
         }
@@ -181,11 +199,11 @@ impl DisplayManager {
         let block = Block::default().borders(Borders::ALL).title_bottom(
             Line::from(format!(
                 " {} x {} ",
-                self.render_area.width, self.render_area.height
+                self.obj_render_area.width, self.obj_render_area.height
             ))
             .right_aligned(),
         );
-        frame.render_widget(block, area);
+        frame.render_widget(block, self.obj_render_area);
     }
 
     fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
@@ -199,19 +217,14 @@ impl DisplayManager {
                 bottom: 0,
             });
 
-        let info_block = Paragraph::new(vec![
-            Line::styled("Quit", Style::default()),
-            Line::styled("Swap displayed data", Style::default()),
-        ])
-        .alignment(Alignment::Left)
-        .block(block.clone());
+        let info_block =
+            Paragraph::new(vec![Line::from("Quit"), Line::from("Swap displayed data")])
+                .alignment(Alignment::Left)
+                .block(block.clone());
 
-        let key_block = Paragraph::new(vec![
-            Line::styled("Esc or Q", Style::default()),
-            Line::styled("A or D", Style::default()),
-        ])
-        .alignment(Alignment::Right)
-        .block(block);
+        let key_block = Paragraph::new(vec![Line::from("Esc or Q"), Line::from("A or D")])
+            .alignment(Alignment::Right)
+            .block(block);
 
         frame.render_widget(info_block, area);
         frame.render_widget(key_block, area);

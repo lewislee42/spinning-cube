@@ -24,6 +24,8 @@ pub struct App {
 
     buffer: Vec<char>, // Change to use image/frame instead
     z_buffer: Vec<f32>,
+
+    is_auto_rotating: bool,
 }
 
 impl App {
@@ -39,9 +41,10 @@ impl App {
             object_rotation_speed: 0.005,
             buffer: vec![],
             z_buffer: vec![],
+            is_auto_rotating: true,
         };
-        let render_width = app.display_manager.render_area.width;
-        let render_height = app.display_manager.render_area.height;
+        let render_width = app.display_manager.obj_render_area.width;
+        let render_height = app.display_manager.obj_render_area.height;
 
         app.buffer = vec![' '; (render_width * render_height) as usize];
         app.z_buffer = vec![0.0; (render_width * render_height) as usize];
@@ -61,8 +64,8 @@ impl App {
     fn calculate_screen_pos(&mut self, point: &Vec3, normal: &Vec3) -> Result<()> {
         let rotated_point = self.object.apply_rotation_on_point(point);
         let k_1 = 40.0;
-        let render_width = self.display_manager.render_area.width;
-        let render_height = self.display_manager.render_area.height;
+        let render_width = self.display_manager.obj_render_area.width;
+        let render_height = self.display_manager.obj_render_area.height;
 
         let ooz: f32 = 1.0 / (rotated_point.z + self.object_distance);
         let screen_pos_x: i32 =
@@ -95,7 +98,7 @@ impl App {
         self.z_buffer.fill(0.0);
     }
 
-    fn print_frame(&self, terminal: &mut DefaultTerminal) -> Result<()> {
+    fn print_frame(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         let renderer_info = self.get_renderer_info();
         let object_info = self.get_object_info();
         self.display_manager
@@ -111,6 +114,7 @@ impl App {
             drag_dir: self.input_handler.drag_dir,
             is_dragging: self.input_handler.is_dragging,
             selected_pane: self.input_handler.selected_pane,
+            is_auto_rotating: self.is_auto_rotating,
         }
     }
 
@@ -132,16 +136,36 @@ impl App {
         };
     }
 
+    fn should_auto_rotate(&mut self) -> bool {
+        if self.input_handler.is_dragging == true {
+            return false;
+        }
+
+        let is_x_in_range = self.object.rotation_velocity.x.abs() < 0.001;
+        let is_y_in_range = self.object.rotation_velocity.y.abs() < 0.001;
+
+        if is_x_in_range == true && is_y_in_range == true {
+            return true;
+        }
+
+        false
+    }
+
     fn handle_object_rotation(&mut self) {
         if self.input_handler.is_dragging == true {
             self.object.rotation_velocity = self.input_handler.drag_dir;
         }
-        let mut rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;
-        //   rotate_amount = Vec3::default_vec(self.object.rotation_speed, self.object.rotation_speed, self.object.rotation_speed);
+
+        let mut rotate_amount: Vec3;
+        self.is_auto_rotating = self.should_auto_rotate();
+        if self.is_auto_rotating == false {
+            rotate_amount = self.object.rotation_velocity * self.object_rotation_speed;
+            self.object.rotation_velocity *= 0.996;
+        } else {
+            rotate_amount = Vec3::default_vec(0.003, 0.003, 0.003);
+        }
 
         self.object.rotate(&rotate_amount);
-
-        self.object.rotation_velocity *= 0.996;
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -197,7 +221,6 @@ impl App {
             self.print_frame(terminal)?;
 
             self.handle_object_rotation();
-
         }
 
         Ok(())
