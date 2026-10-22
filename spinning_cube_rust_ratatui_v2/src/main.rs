@@ -4,7 +4,6 @@ mod object;
 mod input_handler;
 mod matrix;
 mod display_manager;
-mod camera;
 
 use color_eyre::Result;
 use crossterm::{

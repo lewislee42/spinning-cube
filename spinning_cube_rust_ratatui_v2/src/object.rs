@@ -13,13 +13,10 @@
 use crate::matrix::Matrix3;
 use crate::vec3::Vec3;
 
+#[derive(Clone)]
 pub struct Object {
     pub rotation_matrix: Matrix3, // Not used as of now
     pub rotation_velocity: Vec3,
-
-    // Temp variables to remove in the future
-    pub width: f32,
-    pub increment_speed: f32,
 }
 
 impl Object {
@@ -27,17 +24,25 @@ impl Object {
         Self {
             rotation_matrix: Matrix3::identity(),
             rotation_velocity: Vec3::default(),
-            width: 20.0,
-            increment_speed: 0.3,
         }
     }
 
-    pub fn apply_rotation_on_point(&mut self, point: &Vec3) -> Vec3 {
+    pub fn apply_rotation_on_point(&self, point: &Vec3) -> Vec3 {
         let m = &self.rotation_matrix.m;
 
         let x = m[0][0] * point.x + m[0][1] * point.y + m[0][2] * point.z;
         let y = m[1][0] * point.x + m[1][1] * point.y + m[1][2] * point.z;
         let z = m[2][0] * point.x + m[2][1] * point.y + m[2][2] * point.z;
+
+        Vec3::default_vec(x, y, z)
+    }
+
+    pub fn apply_inverse_rotation_on_point(&self, point: &Vec3) -> Vec3 {
+        let m = &self.rotation_matrix.m;
+
+        let x = m[0][0] * point.x + m[1][0] * point.y + m[2][0] * point.z;
+        let y = m[0][1] * point.x + m[1][1] * point.y + m[2][1] * point.z;
+        let z = m[0][2] * point.x + m[1][2] * point.y + m[2][2] * point.z;
 
         Vec3::default_vec(x, y, z)
     }

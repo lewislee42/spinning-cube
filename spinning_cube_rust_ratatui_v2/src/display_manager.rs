@@ -67,7 +67,7 @@ impl DisplayManager {
         terminal: &mut DefaultTerminal,
         renderer_info: &RendererInfo,
         object_info: &ObjectInfo,
-        buffer: &Vec<char>,
+        buffer: &Vec<Vec<char>>,
     ) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
@@ -174,7 +174,7 @@ impl DisplayManager {
                 renderer_info.sum_depth / (self.obj_render_area.width as u32 * self.obj_render_area.height as u32)
             )),
             Line::from(format!("{}", renderer_info.clicked_raymarch_depth)),
-            Line::from(format!("{}", renderer_info.clicked_raymarch_distance)),
+            Line::from(format!("{:.3}", renderer_info.clicked_raymarch_distance)),
         ])
         .block(block.clone())
         .alignment(Alignment::Right);
@@ -210,7 +210,7 @@ impl DisplayManager {
         frame.render_widget(right_block, area);
     }
 
-    fn draw_object(&self, frame: &mut Frame, buffer: &Vec<char>) {
+    fn draw_object(&self, frame: &mut Frame, buffer: &Vec<Vec<char>>) {
         let frame_buffer = frame.buffer_mut();
 
         for y in 1..self.obj_render_area.height - 1 {
@@ -219,7 +219,7 @@ impl DisplayManager {
                 let screen_y = self.obj_render_area.y + y as u16;
 
                 if let Some(cell) = frame_buffer.cell_mut((screen_x, screen_y)) {
-                    cell.set_char(buffer[(x + y * self.obj_render_area.width) as usize]);
+                    cell.set_char(buffer[y as usize][x as usize]);
                 }
             }
         }

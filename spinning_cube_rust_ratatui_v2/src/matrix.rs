@@ -1,5 +1,6 @@
 
 
+#[derive(Clone)]
 pub struct Matrix3 {
     pub m: [[f32; 3]; 3]
 }
