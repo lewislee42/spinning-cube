@@ -2,8 +2,8 @@ use crate::vec3::Vec3;
 use color_eyre::Result;
 use enum_cycling_derive::EnumCycle;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::{Alignment, Constraint, Layout, Rect},
+    style::Style,
     text::Line,
     widgets::{Block, Borders, Padding, Paragraph},
     DefaultTerminal, Frame,
@@ -18,6 +18,11 @@ pub struct RendererInfo {
     pub is_dragging: bool,
     pub selected_pane: Panes,
     pub is_auto_rotating: bool,
+    pub max_depth: u32,
+    pub min_depth: u32,
+    pub sum_depth: u32,
+    pub clicked_raymarch_depth: u32,
+    pub clicked_raymarch_distance: f32,
 }
 
 pub struct ObjectInfo {
@@ -32,8 +37,9 @@ pub enum Panes {
 
 pub struct DisplayManager {
     pub obj_render_area: Rect,
-    // renderer_info_pane_scroll: f32,
-    // object_info_pane_scroll: f32,
+    prev_fps: u32,
+    prev_frametime: u128, // renderer_info_pane_scroll: f32,
+                          // object_info_pane_scroll: f32,
 }
 
 impl DisplayManager {
@@ -50,8 +56,9 @@ impl DisplayManager {
 
         Self {
             obj_render_area: render_sections[1],
-            // renderer_info_pane_scroll: 5.0,
-            // object_info_pane_scroll: 5.0,
+            prev_fps: 0,
+            prev_frametime: 0, // renderer_info_pane_scroll: 5.0,
+                               // object_info_pane_scroll: 5.0,
         }
     }
 
@@ -79,6 +86,9 @@ impl DisplayManager {
             self.draw_keybinds(frame, bottom_cell);
 
             self.draw_object(frame, buffer);
+
+            self.prev_fps = renderer_info.fps;
+            self.prev_frametime = renderer_info.delta_time;
         })?;
         Ok(())
     }
@@ -115,7 +125,7 @@ impl DisplayManager {
     fn draw_renderer_info(&self, frame: &mut Frame, area: Rect, renderer_info: &RendererInfo) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" State information ")
+            .title(" ← Render information → ")
             .padding(Padding {
                 left: 1,
                 right: 1,
@@ -130,13 +140,23 @@ impl DisplayManager {
             Line::from("Drag direction:"),
             Line::from("Is dragging?:"),
             Line::from("Auto rotate:"),
+            Line::from("Max depth:"),
+            Line::from("Min depth:"),
+            Line::from("Mean depth:"),
+            Line::from("Clicked depth:"),
+            Line::from("Clicked distance:"),
+
         ])
         .block(block.clone())
         .alignment(Alignment::Left);
 
         let right_block = Paragraph::new(vec![
-            Line::from(format!("{}", renderer_info.fps,)),
-            Line::from(format!("{}", renderer_info.delta_time)),
+            Line::from(
+                self.get_numbers_format_string(renderer_info.fps as u128, self.prev_fps as u128),
+            ),
+            Line::from(
+                self.get_numbers_format_string(renderer_info.delta_time, self.prev_frametime),
+            ),
             Line::from(format!(
                 "X:{}, Y:{}",
                 renderer_info.clicked_x, renderer_info.clicked_y
@@ -147,6 +167,14 @@ impl DisplayManager {
             )),
             Line::from(format!("{}", renderer_info.is_dragging)),
             Line::from(format!("{}", renderer_info.is_auto_rotating)),
+            Line::from(format!("{}", renderer_info.max_depth)),
+            Line::from(format!("{}", renderer_info.min_depth)),
+            Line::from(format!(
+                "{}",
+                renderer_info.sum_depth / (self.obj_render_area.width as u32 * self.obj_render_area.height as u32)
+            )),
+            Line::from(format!("{}", renderer_info.clicked_raymarch_depth)),
+            Line::from(format!("{}", renderer_info.clicked_raymarch_distance)),
         ])
         .block(block.clone())
         .alignment(Alignment::Right);
@@ -158,7 +186,7 @@ impl DisplayManager {
     fn draw_object_info(&self, frame: &mut Frame, area: Rect, object_info: &ObjectInfo) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Object information ")
+            .title(" ← Object information → ")
             .padding(Padding {
                 left: 1,
                 right: 1,
@@ -217,10 +245,12 @@ impl DisplayManager {
                 bottom: 0,
             });
 
-        let info_block =
-            Paragraph::new(vec![Line::from("Quit"), Line::from("Swap displayed data")])
-                .alignment(Alignment::Left)
-                .block(block.clone());
+        let info_block = Paragraph::new(vec![
+            Line::from("Quit"),
+            Line::from("Swap displayed information"),
+        ])
+        .alignment(Alignment::Left)
+        .block(block.clone());
 
         let key_block = Paragraph::new(vec![Line::from("Esc or Q"), Line::from("A or D")])
             .alignment(Alignment::Right)
@@ -228,5 +258,19 @@ impl DisplayManager {
 
         frame.render_widget(info_block, area);
         frame.render_widget(key_block, area);
+    }
+
+    fn get_numbers_format_string(&self, current_val: u128, previous_val: u128) -> String {
+        let string;
+
+        if current_val > previous_val {
+            string = format!("↑{}", current_val);
+        } else if current_val < previous_val {
+            string = format!("↓{}", current_val);
+        } else {
+            string = format!("·{}", current_val);
+        }
+
+        string
     }
 }

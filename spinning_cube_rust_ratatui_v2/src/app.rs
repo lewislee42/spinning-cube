@@ -6,7 +6,6 @@ use crate::{
 };
 
 use color_eyre::Result;
-use std::cmp::max;
 use std::time::{Duration, Instant};
 
 use ratatui::DefaultTerminal;
@@ -26,6 +25,11 @@ pub struct App {
     z_buffer: Vec<f32>,
 
     is_auto_rotating: bool,
+    max_depth: u32,
+    min_depth: u32,
+    sum_depth: u32,
+    clicked_raymarch_depth: u32,
+    clicked_raymarch_distance: f32,
 }
 
 impl App {
@@ -41,6 +45,11 @@ impl App {
             buffer: vec![],
             z_buffer: vec![],
             is_auto_rotating: true,
+            max_depth: 0,
+            min_depth: 0,
+            sum_depth: 0,
+            clicked_raymarch_depth: 0,
+            clicked_raymarch_distance: 0.0,
         };
         let render_width = app.display_manager.obj_render_area.width;
         let render_height = app.display_manager.obj_render_area.height;
@@ -72,6 +81,11 @@ impl App {
             is_dragging: self.input_handler.is_dragging,
             selected_pane: self.input_handler.selected_pane,
             is_auto_rotating: self.is_auto_rotating,
+            max_depth: self.max_depth,
+            min_depth: self.min_depth,
+            sum_depth: self.sum_depth,
+            clicked_raymarch_depth: self.clicked_raymarch_depth,
+            clicked_raymarch_distance: self.clicked_raymarch_distance,
         }
     }
 
@@ -98,8 +112,8 @@ impl App {
             return false;
         }
 
-        let is_x_in_range = self.object.rotation_velocity.x.abs() < 0.001;
-        let is_y_in_range = self.object.rotation_velocity.y.abs() < 0.001;
+        let is_x_in_range = self.object.rotation_velocity.x.abs() < 0.01;
+        let is_y_in_range = self.object.rotation_velocity.y.abs() < 0.01;
 
         if is_x_in_range == true && is_y_in_range == true {
             return true;
@@ -129,6 +143,7 @@ impl App {
         let ray_origin = Vec3::default_vec(0.0, 0.0, -3.0);
         let screen_width = self.display_manager.obj_render_area.width as f32;
         let screen_height = self.display_manager.obj_render_area.height as f32;
+        self.sum_depth = 0;
 
         for i in 0..screen_height as i32 {
             for j in 0..screen_width as i32 {
@@ -138,7 +153,16 @@ impl App {
 
                 let ray_dir = Vec3::default_vec(u, v, 1.0).normalize();
 
-                let distance = self.ray_march(ray_origin, ray_dir);
+                let (depth, distance) = self.ray_march_algo(ray_origin, ray_dir);
+                if depth > self.max_depth {
+                    self.max_depth = depth;
+                    if self.min_depth == 0 {
+                        self.min_depth = depth;
+                    }
+                } else if depth > 0 && depth < self.min_depth {
+                    self.min_depth = depth;
+                }
+                self.sum_depth += depth;
 
                 if distance < 100.0 {
                     let point = ray_origin + ray_dir * distance;
@@ -151,6 +175,7 @@ impl App {
 
                     color = Vec3::default_vec(0.9, 0.2, 0.3) * diffuse + Vec3::default_n(0.5);
                 }
+
                 color.x = color.x * 10.0;
                 color.x = color.x.clamp(0.0, 9.0);
                 let luminance_index = color.x as usize;
@@ -179,13 +204,14 @@ impl App {
         normal.normalize()
     }
 
-    fn ray_march(&mut self, ray_ori: Vec3, ray_dir: Vec3) -> f32 {
+    fn ray_march_algo(&mut self, ray_ori: Vec3, ray_dir: Vec3) -> (u32, f32) {
         let mut distance_traveled = 0.0;
         let max_step = 100;
-        let surface_threshold = 0.001;
+        let surface_threshold = 0.005;
         let max_distance = 100.0;
+        let mut depth = 0;
 
-        for i in 0..max_step {
+        while depth < max_step {
             let point = ray_ori + ray_dir * distance_traveled;
 
             let distance_to_closest_obj = self.find_closest_obj(point);
@@ -195,9 +221,10 @@ impl App {
             if distance_to_closest_obj < surface_threshold || distance_traveled > max_distance {
                 break;
             }
+            depth += 1;
         }
 
-        distance_traveled
+        (depth, distance_traveled)
     }
 
     fn find_closest_obj(&mut self, point: Vec3) -> f32 {
@@ -216,6 +243,21 @@ impl App {
         Vec3::max(q, Vec3::default()).length() + q.x.max(q.y.max(q.z)).min(0.0)
     }
 
+    fn handle_click(&mut self) {
+        if self.input_handler.clicked == true {
+            let screen_width = self.display_manager.obj_render_area.width as f32;
+            let screen_height = self.display_manager.obj_render_area.height as f32;
+            let u = (self.input_handler.clicked_x as f32 - 0.5 * screen_width) / screen_height;
+            let v =
+                (self.input_handler.clicked_y as f32 - 0.5 * screen_height) / screen_height * 2.0;
+            let ray_origin = Vec3::default_vec(0.0, 0.0, -3.0);
+            let ray_dir = Vec3::default_vec(u, v, 1.0).normalize();
+
+            (self.clicked_raymarch_depth, self.clicked_raymarch_distance) =
+                self.ray_march_algo(ray_origin, ray_dir);
+        }
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         self.last_frame = Instant::now();
 
@@ -225,12 +267,12 @@ impl App {
             if self.input_handler.should_close == true {
                 break;
             }
+            self.handle_click();
 
             self.calculate_fps();
 
             self.clear_buffers();
 
-            // self.calculate_updated_object()?;
             self.calculate_update_object_v2();
 
             self.print_frame(terminal)?;

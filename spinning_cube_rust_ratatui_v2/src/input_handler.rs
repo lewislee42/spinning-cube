@@ -17,6 +17,7 @@ pub struct InputHandler {
     pub is_dragging: bool,
     pub time_since_drag: Instant,
     pub selected_pane: Panes,
+    pub clicked: bool,
     drag_prev_x: u16,
     drag_prev_y: u16,
 }
@@ -31,6 +32,7 @@ impl InputHandler {
             selected_pane: Panes::Renderer,
             drag_dir: Vec3::default(),
             time_since_drag: Instant::now(),
+            clicked: false,
             drag_prev_x: 0,
             drag_prev_y: 0,
         }
@@ -53,9 +55,13 @@ impl InputHandler {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.clicked_x = mouse_event.column;
                 self.clicked_y = mouse_event.row;
-                self.update_drag(mouse_event)
+                self.update_drag(mouse_event);
+                self.clicked = true;
             }
-            MouseEventKind::Up(MouseButton::Left) => self.reset_drag(),
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.reset_drag();
+                self.clicked = false;
+            }
             _ => {}
         }
     }
