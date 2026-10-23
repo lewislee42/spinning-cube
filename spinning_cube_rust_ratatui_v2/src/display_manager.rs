@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::Line,
-    widgets::{Block, Borders, Padding, Paragraph},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph},
     DefaultTerminal, Frame,
 };
 
@@ -116,7 +116,11 @@ impl DisplayManager {
 ▒ ▀  ▀ ▓▄▄▄▀ ▓▄▄▄▀ ▒     ▓▀▀▀▀ ▓▀▀   ▓▄▄▄▀
 ░    █ ▒   █ ▒   █ ▀▄▄▄▄ ▒   █ ░▄▄▄▄ ▒   █";
         let block = Paragraph::new(title)
-            .block(Block::default().borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
+            )
             .alignment(Alignment::Center)
             .style(Style::default());
         frame.render_widget(block, area);
@@ -125,6 +129,7 @@ impl DisplayManager {
     fn draw_renderer_info(&self, frame: &mut Frame, area: Rect, renderer_info: &RendererInfo) {
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(" ← Render information → ")
             .padding(Padding {
                 left: 1,
@@ -145,7 +150,6 @@ impl DisplayManager {
             Line::from("Mean depth:"),
             Line::from("Clicked depth:"),
             Line::from("Clicked distance:"),
-
         ])
         .block(block.clone())
         .alignment(Alignment::Left);
@@ -171,7 +175,8 @@ impl DisplayManager {
             Line::from(format!("{}", renderer_info.min_depth)),
             Line::from(format!(
                 "{}",
-                renderer_info.sum_depth / (self.obj_render_area.width as u32 * self.obj_render_area.height as u32)
+                renderer_info.sum_depth
+                    / (self.obj_render_area.width as u32 * self.obj_render_area.height as u32)
             )),
             Line::from(format!("{}", renderer_info.clicked_raymarch_depth)),
             Line::from(format!("{:.3}", renderer_info.clicked_raymarch_distance)),
@@ -186,6 +191,7 @@ impl DisplayManager {
     fn draw_object_info(&self, frame: &mut Frame, area: Rect, object_info: &ObjectInfo) {
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(" ← Object information → ")
             .padding(Padding {
                 left: 1,
@@ -224,19 +230,23 @@ impl DisplayManager {
             }
         }
 
-        let block = Block::default().borders(Borders::ALL).title_bottom(
-            Line::from(format!(
-                " {} x {} ",
-                self.obj_render_area.width, self.obj_render_area.height
-            ))
-            .right_aligned(),
-        );
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title_bottom(
+                Line::from(format!(
+                    " {} x {} ",
+                    self.obj_render_area.width, self.obj_render_area.height
+                ))
+                .right_aligned(),
+            );
         frame.render_widget(block, self.obj_render_area);
     }
 
     fn draw_keybinds(&self, frame: &mut Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(" Keybind info ")
             .padding(Padding {
                 left: 1,
