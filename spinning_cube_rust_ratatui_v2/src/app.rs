@@ -13,6 +13,10 @@ use ratatui::DefaultTerminal;
 use rayon::prelude::*;
 
 pub struct App {
+    buffer: Vec<Vec<char>>, // Change to use image/frame instead
+    z_buffer: Vec<Vec<f32>>,
+    depth_buffer: Vec<Vec<u32>>,
+
     delta_time: Duration,
     fps: u32,
     last_frame: Instant,
@@ -22,8 +26,6 @@ pub struct App {
 
     object: Object,
     object_rotation_speed: f32,
-
-    buffer: Vec<Vec<char>>, // Change to use image/frame instead
 
     is_auto_rotating: bool,
     max_depth: u32,
@@ -36,6 +38,9 @@ pub struct App {
 impl App {
     pub fn default() -> Self {
         let mut app = Self {
+            buffer: vec![],
+            z_buffer: vec![],
+            depth_buffer: vec![],
             delta_time: Duration::default(),
             fps: 0,
             last_frame: Instant::now(),
@@ -43,7 +48,6 @@ impl App {
             display_manager: DisplayManager::default(),
             object: Object::default(),
             object_rotation_speed: 0.005,
-            buffer: vec![],
             is_auto_rotating: true,
             max_depth: 0,
             min_depth: 0,
@@ -55,6 +59,8 @@ impl App {
         let render_height = app.display_manager.obj_render_area.height;
 
         app.buffer = vec![vec![' '; render_width as usize]; render_height as usize];
+        app.z_buffer = vec![vec![0.0; render_width as usize]; render_height as usize];
+        app.depth_buffer = vec![vec![0; render_width as usize]; render_height as usize];
         app
     }
 
@@ -140,52 +146,67 @@ impl App {
     }
 
     fn calculate_update_object_v2(&mut self) {
-        let obj = self.object.clone();
+        let Self { object, .. } = self;
         let ray_origin = Vec3::default_vec(0.0, 0.0, -3.0);
         let screen_width = self.display_manager.obj_render_area.width as f32;
         let screen_height = self.display_manager.obj_render_area.height as f32;
-        // self.sum_depth = 0;
+        self.sum_depth = 0;
 
         self.buffer
             .par_iter_mut()
+            .zip(self.depth_buffer.par_iter_mut())
+            .zip(self.z_buffer.par_iter_mut())
             .enumerate()
-            .for_each(|(index_y, row)| {
-                row.par_iter_mut().enumerate().for_each(|(index_x, cell)| {
-                    let u = (index_x as f32 - 0.5 * screen_width) / screen_height;
-                    let v = (index_y as f32 - 0.5 * screen_height) / screen_height * 2.0;
-                    let mut color = Vec3::default_vec(0.0, 0.0, 0.0);
+            .for_each(|(index_y, ((row, depth_row), z_row))| {
+                row.par_iter_mut()
+                    .zip(depth_row.par_iter_mut())
+                    .zip(z_row.par_iter_mut())
+                    .enumerate()
+                    .for_each(|(index_x, ((cell, depth_cell), z_cell))| {
+                        let u = (index_x as f32 - 0.5 * screen_width) / screen_height;
+                        let v = (index_y as f32 - 0.5 * screen_height) / screen_height * 2.0;
+                        let mut color = Vec3::default_vec(0.0, 0.0, 0.0);
 
-                    let ray_dir = Vec3::default_vec(u, v, 1.0).normalize();
+                        let ray_dir = Vec3::default_vec(u, v, 1.0).normalize();
 
-                    let (_, distance) = ray_march_algo(&obj, ray_origin, ray_dir);
-                    // if depth > self.max_depth {
-                    //     self.max_depth = depth;
-                    //     if self.min_depth == 0 {
-                    //         self.min_depth = depth;
-                    //     }
-                    // } else if depth > 0 && depth < self.min_depth {
-                    //     self.min_depth = depth;
-                    // }
-                    // self.sum_depth += depth;
+                        let (depth, distance) = ray_march_algo(&object, ray_origin, ray_dir);
+                        *depth_cell = depth;
+                        *z_cell = distance;
 
-                    if distance < 50.0 {
-                        let point = ray_origin + ray_dir * distance;
-                        let normal = get_normal(&obj, point);
+                        if distance < 50.0 {
+                            let point = ray_origin + ray_dir * distance;
+                            let normal = get_normal(&object, point);
 
-                        let light_position = Vec3::default_vec(1.0, 2.0, -3.0);
-                        let light_direction = (light_position - point).normalize();
+                            let light_position = Vec3::default_vec(1.0, 2.0, -3.0);
+                            let light_direction = (light_position - point).normalize();
 
-                        let diffuse = f32::max(normal.dot(light_direction), 0.0);
+                            let diffuse = f32::max(normal.dot(light_direction), 0.0);
 
-                        color = Vec3::default_vec(0.9, 0.2, 0.3) * diffuse + Vec3::default_n(0.5);
-                    }
+                            color =
+                                Vec3::default_vec(0.9, 0.2, 0.3) * diffuse + Vec3::default_n(0.5);
+                        }
 
-                    color.x = color.x * 10.0;
-                    color.x = color.x.clamp(0.0, 9.0);
-                    let luminance_index = color.x as usize;
-                    *cell = " .,-~:;#$@".as_bytes()[luminance_index] as char;
-                });
+                        color.x = color.x * 10.0;
+                        color.x = color.x.clamp(0.0, 9.0);
+                        let luminance_index = color.x as usize;
+                        *cell = " .,-~:;#$@".as_bytes()[luminance_index] as char;
+                    });
             });
+
+        for i in 0..self.depth_buffer.len() {
+            for j in 0..self.depth_buffer[i].len() {
+                let depth = self.depth_buffer[i][j];
+                if depth > self.max_depth {
+                    self.max_depth = depth;
+                    if self.min_depth == 0 {
+                        self.min_depth = depth;
+                    }
+                } else if depth > 0 && depth < self.min_depth {
+                    self.min_depth = depth;
+                }
+                self.sum_depth += depth;
+            }
+        }
     }
 
     fn handle_click(&mut self) {
